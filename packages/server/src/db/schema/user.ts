@@ -121,6 +121,8 @@ export const user = pgTable("user", {
 	stripeCustomerId: text("stripeCustomerId"),
 	stripeSubscriptionId: text("stripeSubscriptionId"),
 	serversQuantity: integer("serversQuantity").notNull().default(0),
+	// Custom Docker image for updates (e.g., "ghcr.io/spacatty/dokploy-unfork:canary")
+	customDockerImage: text("customDockerImage"),
 });
 
 export const usersRelations = relations(user, ({ one, many }) => ({
@@ -322,6 +324,10 @@ export const apiUpdateWebServerMonitoring = z.object({
 			}),
 		})
 		.required(),
+});
+
+export const apiUpdateCustomDockerImage = z.object({
+	customDockerImage: z.string().nullable(),
 });
 
 export const apiUpdateUser = createSchema.partial().extend({
