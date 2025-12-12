@@ -1,6 +1,7 @@
 import type { IUpdateData } from "@dokploy/server/index";
 import {
 	Bug,
+	Container,
 	Download,
 	Info,
 	RefreshCcw,
@@ -25,6 +26,7 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { api } from "@/utils/api";
+import { CustomDockerImage } from "./custom-docker-image";
 import { ToggleAutoCheckUpdates } from "./toggle-auto-check-updates";
 import { UpdateWebServer } from "./update-webserver";
 
@@ -49,6 +51,8 @@ export const UpdateServer = ({
 		api.settings.getUpdateData.useMutation();
 	const { data: dokployVersion } = api.settings.getDokployVersion.useQuery();
 	const { data: releaseTag } = api.settings.getReleaseTag.useQuery();
+	const { data: customDockerImage } =
+		api.settings.getCustomDockerImage.useQuery();
 	const [latestVersion, setLatestVersion] = useState(
 		updateData?.latestVersion ?? "",
 	);
@@ -127,7 +131,7 @@ export const UpdateServer = ({
 				)}
 			</DialogTrigger>
 			<DialogContent className="max-w-lg">
-				<div className="flex items-center justify-between mb-8">
+				<div className="flex items-center justify-between mb-6">
 					<DialogTitle className="text-2xl font-semibold">
 						Web Server Update
 					</DialogTitle>
@@ -222,8 +226,10 @@ export const UpdateServer = ({
 							<div className="text-center space-y-2">
 								<h3 className="text-lg font-medium">Checking for updates...</h3>
 								<p className="text text-muted-foreground">
-									Please wait while we pull the latest version information from
-									Docker Hub.
+									Please wait while we pull the latest version information
+									{customDockerImage
+										? " from the custom image registry."
+										: " from Docker Hub."}
 								</p>
 							</div>
 						</div>
@@ -249,12 +255,31 @@ export const UpdateServer = ({
 					</div>
 				)}
 
-				<div className="flex items-center justify-between pt-2">
-					<ToggleAutoCheckUpdates disabled={isLoading} />
-				</div>
+				{/* Footer with options */}
+				<div className="border-t pt-4 space-y-4">
+					{/* Update source indicator */}
+					<div className="flex items-center justify-between text-sm">
+						<div className="flex items-center gap-2 text-muted-foreground">
+							<Container className="h-4 w-4" />
+							<span>Source:</span>
+							{customDockerImage ? (
+								<code className="text-xs bg-muted px-1.5 py-0.5 rounded text-foreground">
+									{customDockerImage}
+								</code>
+							) : (
+								<span className="text-foreground">Official Dokploy</span>
+							)}
+						</div>
+						<CustomDockerImage />
+					</div>
 
-				<div className="space-y-4 flex items-center justify-end mt-4	">
-					<div className="flex items-center gap-2">
+					{/* Auto check toggle */}
+					<div className="flex items-center justify-between">
+						<ToggleAutoCheckUpdates disabled={isLoading} />
+					</div>
+
+					{/* Action buttons */}
+					<div className="flex items-center justify-end gap-2 pt-2">
 						<Button variant="outline" onClick={() => onOpenChange?.(false)}>
 							Cancel
 						</Button>

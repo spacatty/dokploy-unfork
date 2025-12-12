@@ -10,6 +10,7 @@ import {
 	cleanupVolumes,
 	DEFAULT_UPDATE_DATA,
 	execAsync,
+	findOwner,
 	findServerById,
 	findUserById,
 	getDokployImage,
@@ -61,6 +62,7 @@ import {
 	apiSaveSSHKey,
 	apiServerSchema,
 	apiTraefikConfig,
+	apiUpdateCustomDockerImage,
 	apiUpdateDockerCleanup,
 	projects,
 	server,
@@ -390,14 +392,19 @@ export const settingsRouter = createTRPCRouter({
 			return DEFAULT_UPDATE_DATA;
 		}
 
-		return await getUpdateData();
+		const owner = await findOwner();
+		const customDockerImage = owner.user.customDockerImage;
+		return await getUpdateData(customDockerImage);
 	}),
 	updateServer: adminProcedure.mutation(async () => {
 		if (IS_CLOUD) {
 			return true;
 		}
 
-		await pullLatestRelease();
+		const owner = await findOwner();
+		const customDockerImage = owner.user.customDockerImage;
+
+		await pullLatestRelease(customDockerImage);
 
 		// This causes restart of dokploy, thus it will not finish executing properly, so don't await it
 		// Status after restart is checked via frontend /api/health endpoint
@@ -406,12 +413,25 @@ export const settingsRouter = createTRPCRouter({
 			"update",
 			"--force",
 			"--image",
-			getDokployImage(),
+			getDokployImage(customDockerImage),
 			"dokploy",
 		]);
 
 		return true;
 	}),
+	getCustomDockerImage: adminProcedure.query(async () => {
+		const owner = await findOwner();
+		return owner.user.customDockerImage;
+	}),
+	updateCustomDockerImage: adminProcedure
+		.input(apiUpdateCustomDockerImage)
+		.mutation(async ({ input }) => {
+			const owner = await findOwner();
+			await updateUser(owner.user.id, {
+				customDockerImage: input.customDockerImage,
+			});
+			return true;
+		}),
 
 	getDokployVersion: protectedProcedure.query(() => {
 		return packageInfo.version;

@@ -26,12 +26,22 @@ export const getDokployImageTag = () => {
 	return process.env.RELEASE_TAG || "latest";
 };
 
-export const getDokployImage = () => {
+/** Returns the default Dokploy Docker image (official dokploy/dokploy) */
+export const getDefaultDokployImage = () => {
 	return `dokploy/dokploy:${getDokployImageTag()}`;
 };
 
-export const pullLatestRelease = async () => {
-	const stream = await docker.pull(getDokployImage());
+/** Returns the Docker image to use for updates - either custom or default */
+export const getDokployImage = (customDockerImage?: string | null) => {
+	if (customDockerImage) {
+		return customDockerImage;
+	}
+	return getDefaultDokployImage();
+};
+
+export const pullLatestRelease = async (customDockerImage?: string | null) => {
+	const image = getDokployImage(customDockerImage);
+	const stream = await docker.pull(image);
 	await new Promise((resolve, reject) => {
 		docker.modem.followProgress(stream, (err, res) =>
 			err ? reject(err) : resolve(res),
@@ -54,8 +64,59 @@ export const getServiceImageDigest = async () => {
 	return currentDigest;
 };
 
+/** Parses a Docker image string into registry, repository, and tag components */
+export const parseDockerImage = (
+	image: string,
+): { registry: string; repository: string; tag: string } => {
+	// Default values
+	let registry = "docker.io";
+	let repository = image;
+	let tag = "latest";
+
+	// Extract tag if present
+	const tagIndex = repository.lastIndexOf(":");
+	if (tagIndex !== -1 && !repository.substring(tagIndex).includes("/")) {
+		tag = repository.substring(tagIndex + 1);
+		repository = repository.substring(0, tagIndex);
+	}
+
+	// Check if there's a registry specified (contains . or :)
+	const firstSlash = repository.indexOf("/");
+	if (firstSlash !== -1) {
+		const potentialRegistry = repository.substring(0, firstSlash);
+		if (
+			potentialRegistry.includes(".") ||
+			potentialRegistry.includes(":") ||
+			potentialRegistry === "localhost"
+		) {
+			registry = potentialRegistry;
+			repository = repository.substring(firstSlash + 1);
+		}
+	}
+
+	return { registry, repository, tag };
+};
+
+/** Get the remote digest of an image from a container registry using Docker CLI */
+export const getRemoteImageDigest = async (
+	image: string,
+): Promise<string | null> => {
+	try {
+		// Use docker manifest inspect to get the remote digest
+		const { stdout } = await execAsync(
+			`docker manifest inspect ${image} --verbose 2>/dev/null | grep -m1 '"digest"' | cut -d'"' -f4 || docker buildx imagetools inspect ${image} 2>/dev/null | grep -m1 "Digest:" | awk '{print $2}'`,
+		);
+		const digest = stdout.trim();
+		return digest || null;
+	} catch {
+		return null;
+	}
+};
+
 /** Returns latest version number and information whether server update is available by comparing current image's digest against digest for provided image tag via Docker hub API. */
-export const getUpdateData = async (): Promise<IUpdateData> => {
+export const getUpdateData = async (
+	customDockerImage?: string | null,
+): Promise<IUpdateData> => {
 	let currentDigest: string;
 	try {
 		currentDigest = await getServiceImageDigest();
@@ -64,6 +125,19 @@ export const getUpdateData = async (): Promise<IUpdateData> => {
 		return DEFAULT_UPDATE_DATA;
 	}
 
+	// If using a custom Docker image, check for updates using manifest inspect
+	if (customDockerImage) {
+		const remoteDigest = await getRemoteImageDigest(customDockerImage);
+		if (!remoteDigest) {
+			return DEFAULT_UPDATE_DATA;
+		}
+
+		const { tag } = parseDockerImage(customDockerImage);
+		const updateAvailable = remoteDigest !== currentDigest;
+		return { latestVersion: tag, updateAvailable };
+	}
+
+	// Default behavior: check Docker Hub for official dokploy/dokploy image
 	const baseUrl = "https://hub.docker.com/v2/repositories/dokploy/dokploy/tags";
 	let url: string | null = `${baseUrl}?page_size=100`;
 	let allResults: { digest: string; name: string }[] = [];
